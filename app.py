@@ -1,15 +1,19 @@
 import os
 import re
+import shutil
 import tempfile
 import numpy as np
 import librosa
 import yt_dlp
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_cors import CORS
 from hmmlearn import hmm
 
 app = Flask(__name__)
 CORS(app)
+
+AUDIO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'audio_cache')
+os.makedirs(AUDIO_DIR, exist_ok=True)
 
 # Krumhansl-Schmuckler key profiles
 MAJOR_PROFILE = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09,
@@ -243,8 +247,11 @@ def _viterbi_decode(startprob, transmat, emission_probs):
 
 def extract_video_id(url: str) -> str | None:
     patterns = [
-        r'(?:v=|\/)([0-9A-Za-z_-]{11})',
+        r'[?&]v=([0-9A-Za-z_-]{11})',
         r'youtu\.be\/([0-9A-Za-z_-]{11})',
+        r'youtube\.com\/shorts\/([0-9A-Za-z_-]{11})',
+        r'youtube\.com\/embed\/([0-9A-Za-z_-]{11})',
+        r'music\.youtube\.com\/watch\?v=([0-9A-Za-z_-]{11})',
     ]
     for p in patterns:
         m = re.search(p, url)
@@ -328,33 +335,23 @@ def analyze_audio(audio_path: str) -> dict:
     key, confidence = detect_key(y, sr)
     chords = detect_chords(y, sr)
 
-    # Spectral features
-    spectral_centroid = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)))
-    rms_energy = float(np.mean(librosa.feature.rms(y=y)))
-
-    # Danceability proxy: beat strength consistency
-    onset_env = librosa.onset.onset_strength(y=y, sr=sr)
-    beat_consistency = float(1 - np.std(onset_env) / (np.mean(onset_env) + 1e-6))
-    danceability = round(min(max(beat_consistency * 100, 0), 100), 1)
-
-    # Energy level
-    energy = round(min(rms_energy * 2000, 100), 1)
-
     return {
         "bpm": bpm,
         "key": key,
         "key_confidence": round(confidence * 100, 1),
         "beats": beats,
-        "chords": chords,  
-        "danceability": danceability,
-        "energy": energy,
-        "spectral_centroid": round(spectral_centroid, 1),
+        "chords": chords,
     }
 
 
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/audio/<path:filename>")
+def serve_audio(filename):
+    return send_from_directory(AUDIO_DIR, filename)
 
 
 @app.route("/analyze", methods=["POST"])
@@ -392,7 +389,6 @@ def analyze():
 
         wav_path = os.path.join(tmpdir, "audio.wav")
         if not os.path.exists(wav_path):
-            # Find whatever audio file was downloaded
             files = os.listdir(tmpdir)
             if not files:
                 return jsonify({"error": "Falha ao extrair áudio."}), 500
@@ -400,6 +396,10 @@ def analyze():
 
         try:
             result = analyze_audio(wav_path)
+            # Copy audio to cache so the frontend can play it
+            cached_name = f"{video_id}.wav"
+            shutil.copy2(wav_path, os.path.join(AUDIO_DIR, cached_name))
+            result["audio_url"] = f"/audio/{cached_name}"
             result["video_id"] = video_id
             return jsonify(result)
         except Exception as e:

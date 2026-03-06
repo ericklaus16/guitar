@@ -107,7 +107,7 @@
       overflow: hidden;
     }
 
-    /* ── LEFT: VIDEO ── */
+    /* ── LEFT: AUDIO PLAYER ── */
     .video-panel {
       background: #000;
       display: flex;
@@ -139,11 +139,111 @@
       line-height: 1.5;
     }
 
-    #yt-frame {
-      width: 100%;
-      height: 100%;
-      border: none;
+    /* ── CUSTOM AUDIO PLAYER ── */
+    .audio-player {
       display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2rem;
+      width: 100%;
+      max-width: 480px;
+      padding: 3rem 2.5rem;
+    }
+
+    .player-disc {
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      background: conic-gradient(from 0deg, var(--surface), var(--border), var(--surface));
+      border: 3px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .player-disc::after {
+      content: '';
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--bg);
+      border: 2px solid var(--border);
+    }
+
+    .player-disc.spinning {
+      animation: disc-spin 3s linear infinite;
+    }
+
+    @keyframes disc-spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .player-controls {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      width: 100%;
+    }
+
+    .btn-play {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+
+    .btn-play:hover { opacity: 0.88; }
+    .btn-play:active { transform: scale(0.94); }
+
+    .btn-play svg {
+      width: 22px;
+      height: 22px;
+      fill: #050a05;
+    }
+
+    .player-track {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .seek-bar {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 4px;
+      border-radius: 99px;
+      background: var(--border);
+      outline: none;
+      cursor: pointer;
+    }
+
+    .seek-bar::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 0 8px var(--glow);
+    }
+
+    .player-times {
+      display: flex;
+      justify-content: space-between;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--muted);
     }
 
     /* ── RIGHT: ANALYSIS ── */
@@ -309,39 +409,6 @@
       box-shadow: 0 0 8px rgba(110,180,255,0.5);
     }
 
-    /* MINI METRICS GRID */
-    .mini-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0.75rem;
-    }
-
-    .mini-card {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 0.9rem 1rem;
-    }
-
-    .mini-label {
-      font-size: 0.58rem;
-      font-weight: 600;
-      letter-spacing: 0.15em;
-      color: var(--muted);
-      text-transform: uppercase;
-      margin-bottom: 0.35rem;
-    }
-
-    .mini-value {
-      font-size: 1.5rem;
-      font-weight: 800;
-      line-height: 1;
-      letter-spacing: -0.03em;
-    }
-
-    .mini-value.pink  { color: var(--accent2); text-shadow: 0 0 16px rgba(255,110,180,0.35); }
-    .mini-value.green { color: var(--accent);  text-shadow: 0 0 16px var(--glow); }
-
     /* BEATS TIMELINE */
     .beats-section { }
 
@@ -458,7 +525,23 @@
       </svg>
       <p>Cole um link do YouTube<br/>e clique em <strong style="color:var(--text)">Analisar</strong></p>
     </div>
-    <div id="yt-frame" style="width:100%;height:100%;display:none;"></div>
+    <div class="audio-player" id="audio-player">
+      <div class="player-disc" id="player-disc"></div>
+      <div class="player-controls">
+        <button class="btn-play" id="btn-play">
+          <svg id="icon-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21"/></svg>
+          <svg id="icon-pause" viewBox="0 0 24 24" style="display:none"><rect x="5" y="3" width="4" height="18"/><rect x="15" y="3" width="4" height="18"/></svg>
+        </button>
+        <div class="player-track">
+          <input type="range" class="seek-bar" id="seek-bar" min="0" max="100" value="0" step="0.1" />
+          <div class="player-times">
+            <span id="time-current">0:00</span>
+            <span id="time-total">0:00</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <audio id="audio-el" preload="auto"></audio>
   </div>
 
   <!-- RIGHT -->
@@ -500,18 +583,6 @@
         </div>
       </div>
 
-      <!-- MINI GRID -->
-      <div class="mini-grid">
-        <div class="mini-card">
-          <div class="mini-label">Dançabilidade</div>
-          <div class="mini-value pink" id="dance-value">—</div>
-        </div>
-        <div class="mini-card">
-          <div class="mini-label">Energia</div>
-          <div class="mini-value green" id="energy-value">—</div>
-        </div>
-      </div>
-
       <!-- BEATS -->
       <div class="beats-section">
         <div class="panel-title">Pulsos detectados</div>
@@ -530,41 +601,47 @@
 </main>
 
 <script>
-  const input      = document.getElementById('url-input');
-  const btnAnalyze = document.getElementById('btn-analyze');
-  const ytFrame    = document.getElementById('yt-frame');
-  const placeholder= document.getElementById('video-placeholder');
-  const emptyState = document.getElementById('empty-state');
-  const loadingState = document.getElementById('loading-state');
-  const errorBox   = document.getElementById('error-box');
-  const resultsDiv = document.getElementById('results');
-  const chordName  = document.getElementById('chord-name');
+  const input       = document.getElementById('url-input');
+  const btnAnalyze  = document.getElementById('btn-analyze');
+  const placeholder = document.getElementById('video-placeholder');
+  const emptyState  = document.getElementById('empty-state');
+  const loadingState= document.getElementById('loading-state');
+  const errorBox    = document.getElementById('error-box');
+  const resultsDiv  = document.getElementById('results');
+  const chordName   = document.getElementById('chord-name');
+  const audioEl     = document.getElementById('audio-el');
+  const audioPlayer = document.getElementById('audio-player');
+  const playerDisc  = document.getElementById('player-disc');
+  const btnPlay     = document.getElementById('btn-play');
+  const iconPlay    = document.getElementById('icon-play');
+  const iconPause   = document.getElementById('icon-pause');
+  const seekBar     = document.getElementById('seek-bar');
+  const timeCurrent = document.getElementById('time-current');
+  const timeTotal   = document.getElementById('time-total');
 
-  let ytPlayer = null;
   let chordData = [];
   let chordInterval = null;
 
-  // Load YouTube IFrame API
-  const tag = document.createElement('script');
-  tag.src = 'https://www.youtube.com/iframe_api';
-  document.head.appendChild(tag);
-
-  function onYouTubeIframeAPIReady() {
-    // API is ready; player is created when needed
-  }
-  // Expose globally for the API callback
-  window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;
-
   function extractVideoId(url) {
     const patterns = [
-      /(?:v=|\/)([\w-]{11})(?:[&?]|$)/,
+      /[?&]v=([\w-]{11})/,
       /youtu\.be\/([\w-]{11})/,
+      /youtube\.com\/shorts\/([\w-]{11})/,
+      /youtube\.com\/embed\/([\w-]{11})/,
+      /music\.youtube\.com\/watch\?v=([\w-]{11})/,
     ];
     for (const p of patterns) {
       const m = url.match(p);
       if (m) return m[1];
     }
     return null;
+  }
+
+  function formatTime(s) {
+    if (!isFinite(s)) return '0:00';
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, '0')}`;
   }
 
   function setState(state) {
@@ -579,21 +656,53 @@
     errorBox.textContent = '\u26a0 ' + msg;
   }
 
-  function loadVideo(videoId) {
-    placeholder.style.display = 'none';
-    ytFrame.style.display = 'block';
-
-    if (ytPlayer) {
-      ytPlayer.loadVideoById(videoId);
+  // ── AUDIO PLAYER CONTROLS ──
+  btnPlay.addEventListener('click', () => {
+    if (audioEl.paused) {
+      audioEl.play();
     } else {
-      ytPlayer = new YT.Player('yt-frame', {
-        videoId: videoId,
-        playerVars: { autoplay: 1 },
-        events: {
-          onReady: () => {},
-        }
-      });
+      audioEl.pause();
     }
+  });
+
+  audioEl.addEventListener('play', () => {
+    iconPlay.style.display = 'none';
+    iconPause.style.display = 'block';
+    playerDisc.classList.add('spinning');
+  });
+
+  audioEl.addEventListener('pause', () => {
+    iconPlay.style.display = 'block';
+    iconPause.style.display = 'none';
+    playerDisc.classList.remove('spinning');
+  });
+
+  audioEl.addEventListener('loadedmetadata', () => {
+    timeTotal.textContent = formatTime(audioEl.duration);
+    seekBar.max = audioEl.duration;
+  });
+
+  audioEl.addEventListener('timeupdate', () => {
+    if (!seekBar._dragging) {
+      seekBar.value = audioEl.currentTime;
+      timeCurrent.textContent = formatTime(audioEl.currentTime);
+    }
+  });
+
+  seekBar.addEventListener('mousedown', () => { seekBar._dragging = true; });
+  seekBar.addEventListener('input', () => {
+    timeCurrent.textContent = formatTime(Number(seekBar.value));
+  });
+  seekBar.addEventListener('change', () => {
+    audioEl.currentTime = Number(seekBar.value);
+    seekBar._dragging = false;
+  });
+
+  function loadAudio(audioUrl) {
+    placeholder.style.display = 'none';
+    audioPlayer.style.display = 'flex';
+    audioEl.src = audioUrl;
+    audioEl.load();
   }
 
   // ── CHORD SYNC ──
@@ -604,10 +713,8 @@
     let currentChord = null;
 
     chordInterval = setInterval(() => {
-      if (!ytPlayer || typeof ytPlayer.getCurrentTime !== 'function') return;
-      const t = ytPlayer.getCurrentTime();
+      const t = audioEl.currentTime;
 
-      // Find the chord active at current time
       let activeChord = chordData[0]?.chord || '—';
       for (let i = chordData.length - 1; i >= 0; i--) {
         if (t >= chordData[i].time) {
@@ -618,7 +725,6 @@
 
       if (activeChord !== currentChord) {
         currentChord = activeChord;
-        // Animate transition
         chordName.classList.remove('fade-in');
         chordName.classList.add('fade-out');
         setTimeout(() => {
@@ -627,7 +733,7 @@
           chordName.classList.add('fade-in');
         }, 200);
       }
-    }, 150); // poll every 150ms
+    }, 150);
   }
 
   function stopChordSync() {
@@ -670,10 +776,10 @@
     const videoId = extractVideoId(url);
     if (!videoId) { showError('URL inválida. Use um link válido do YouTube.'); return; }
 
-    loadVideo(videoId);
     setState('loading');
     btnAnalyze.disabled = true;
     stopChordSync();
+    audioEl.pause();
 
     try {
       const res = await fetch('/analyze', {
@@ -694,14 +800,17 @@
       document.getElementById('key-value').textContent = data.key;
       document.getElementById('conf-pct').textContent = `${data.key_confidence}%`;
       document.getElementById('conf-fill').style.width = `${data.key_confidence}%`;
-      document.getElementById('dance-value').textContent = `${data.danceability}%`;
-      document.getElementById('energy-value').textContent = `${data.energy}%`;
 
       if (data.beats && data.beats.length > 0) {
         animateBeats(data.beats);
       }
 
-      // Start chord sync
+      // Load audio player
+      if (data.audio_url) {
+        loadAudio(data.audio_url);
+        audioEl.play();
+      }
+
       chordData = data.chords || [];
       chordName.textContent = '—';
       setState('results');

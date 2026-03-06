@@ -246,6 +246,50 @@
       color: var(--muted);
     }
 
+    .volume-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      width: 100%;
+      margin-top: 0.25rem;
+    }
+
+    .volume-row svg {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+      color: var(--muted);
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+
+    .volume-row svg:hover { color: var(--text); }
+
+    .volume-bar {
+      -webkit-appearance: none;
+      appearance: none;
+      flex: 1;
+      height: 4px;
+      border-radius: 99px;
+      background: var(--border);
+      outline: none;
+      cursor: pointer;
+    }
+
+    .volume-bar::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--muted);
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .volume-bar:hover::-webkit-slider-thumb {
+      background: var(--accent);
+    }
+
     /* ── RIGHT: ANALYSIS ── */
     .analysis-panel {
       background: var(--surface);
@@ -540,6 +584,14 @@
           </div>
         </div>
       </div>
+      <div class="volume-row">
+        <svg id="vol-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+          <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+        </svg>
+        <input type="range" class="volume-bar" id="volume-bar" min="0" max="1" value="1" step="0.01" />
+      </div>
     </div>
     <audio id="audio-el" preload="auto"></audio>
   </div>
@@ -618,8 +670,11 @@
   const seekBar     = document.getElementById('seek-bar');
   const timeCurrent = document.getElementById('time-current');
   const timeTotal   = document.getElementById('time-total');
+  const volumeBar   = document.getElementById('volume-bar');
+  const volIcon     = document.getElementById('vol-icon');
 
   let chordData = [];
+  let _savedVolume = 1;
   let chordInterval = null;
 
   function extractVideoId(url) {
@@ -676,6 +731,35 @@
     iconPause.style.display = 'none';
     playerDisc.classList.remove('spinning');
   });
+
+  // ── VOLUME CONTROL ──
+  volumeBar.addEventListener('input', () => {
+    audioEl.volume = Number(volumeBar.value);
+    _savedVolume = audioEl.volume || _savedVolume;
+    updateVolIcon();
+  });
+
+  volIcon.addEventListener('click', () => {
+    if (audioEl.volume > 0) {
+      _savedVolume = audioEl.volume;
+      audioEl.volume = 0;
+      volumeBar.value = 0;
+    } else {
+      audioEl.volume = _savedVolume || 0.5;
+      volumeBar.value = audioEl.volume;
+    }
+    updateVolIcon();
+  });
+
+  function updateVolIcon() {
+    const v = audioEl.volume;
+    const paths = v === 0
+      ? '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>'
+      : v < 0.5
+      ? '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>'
+      : '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>';
+    volIcon.innerHTML = paths;
+  }
 
   audioEl.addEventListener('loadedmetadata', () => {
     timeTotal.textContent = formatTime(audioEl.duration);

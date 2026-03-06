@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BeatScope</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0a0a0f;
+      --surface:  #111118;
+      --border:   #1e1e2e;
+      --accent:   #7fff6e;
+      --accent2:  #ff6eb4;
+      --accent3:  #6eb4ff;
+      --text:     #e8e8f0;
+      --muted:    #5a5a7a;
+      --glow:     rgba(127,255,110,0.18);
+    }
+
+    body {
+      font-family: 'Syne', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── HEADER ── */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.75rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+      z-index: 10;
+    }
+
+    .logo {
+      font-size: 1.35rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: var(--accent);
+      text-shadow: 0 0 20px var(--glow);
+    }
+
+    .logo span { color: var(--text); }
+
+    .search-bar {
+      flex: 1;
+      display: flex;
+      gap: 0.5rem;
+      max-width: 640px;
+    }
+
+    .search-bar input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: 'Space Mono', monospace;
+      font-size: 0.8rem;
+      padding: 0.55rem 1rem;
+      border-radius: 6px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .search-bar input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(127,255,110,0.1);
+    }
+
+    .search-bar input::placeholder { color: var(--muted); }
+
+    .btn-analyze {
+      background: var(--accent);
+      color: #050a05;
+      border: none;
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 0.8rem;
+      padding: 0.55rem 1.2rem;
+      border-radius: 6px;
+      cursor: pointer;
+      letter-spacing: 0.05em;
+      transition: opacity 0.2s, transform 0.1s;
+      white-space: nowrap;
+    }
+
+    .btn-analyze:hover { opacity: 0.88; }
+    .btn-analyze:active { transform: scale(0.97); }
+    .btn-analyze:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── MAIN SPLIT ── */
+    main {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── LEFT: VIDEO ── */
+    .video-panel {
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      border-right: 1px solid var(--border);
+    }
+
+    .video-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+      color: var(--muted);
+      text-align: center;
+      padding: 2rem;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .video-placeholder svg {
+      width: 64px; height: 64px;
+      opacity: 0.3;
+    }
+
+    .video-placeholder p {
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    #yt-frame {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: none;
+    }
+
+    /* ── RIGHT: ANALYSIS ── */
+    .analysis-panel {
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 1.5rem;
+      gap: 1.25rem;
+    }
+
+    .panel-title {
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    /* ── LOADING ── */
+    .loading-state {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      padding: 3rem 1rem;
+      text-align: center;
+    }
+
+    .spinner {
+      width: 40px; height: 40px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-state p {
+      font-size: 0.85rem;
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+    }
+
+    /* ── EMPTY STATE ── */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      padding: 3rem 1rem;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .empty-state .icon { font-size: 2.5rem; opacity: 0.4; }
+    .empty-state p { font-size: 0.82rem; line-height: 1.6; }
+
+    /* ── RESULTS ── */
+    .results { display: none; flex-direction: column; gap: 1.25rem; }
+
+    /* BIG METRIC */
+    .metric-hero {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .metric-hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at top left, var(--glow) 0%, transparent 65%);
+      pointer-events: none;
+    }
+
+    .metric-label {
+      font-size: 0.6rem;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 0.3rem;
+    }
+
+    .metric-value {
+      font-size: 3rem;
+      font-weight: 800;
+      line-height: 1;
+      color: var(--accent);
+      letter-spacing: -0.04em;
+      text-shadow: 0 0 30px var(--glow);
+    }
+
+    .metric-unit {
+      font-size: 0.9rem;
+      font-weight: 400;
+      color: var(--muted);
+      margin-left: 0.35rem;
+      letter-spacing: 0.1em;
+    }
+
+    /* KEY card */
+    .key-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .key-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at bottom right, rgba(110,180,255,0.12) 0%, transparent 65%);
+      pointer-events: none;
+    }
+
+    .key-name {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--accent3);
+      letter-spacing: -0.03em;
+      line-height: 1;
+      margin: 0.3rem 0;
+      text-shadow: 0 0 24px rgba(110,180,255,0.4);
+    }
+
+    .confidence-bar-wrap {
+      margin-top: 0.75rem;
+    }
+
+    .confidence-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.62rem;
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+      margin-bottom: 0.3rem;
+    }
+
+    .confidence-bar {
+      height: 4px;
+      background: var(--border);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+
+    .confidence-fill {
+      height: 100%;
+      background: var(--accent3);
+      border-radius: 99px;
+      transition: width 1s cubic-bezier(0.25,1,0.5,1);
+      box-shadow: 0 0 8px rgba(110,180,255,0.5);
+    }
+
+    /* MINI METRICS GRID */
+    .mini-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+    }
+
+    .mini-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.9rem 1rem;
+    }
+
+    .mini-label {
+      font-size: 0.58rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 0.35rem;
+    }
+
+    .mini-value {
+      font-size: 1.5rem;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }
+
+    .mini-value.pink  { color: var(--accent2); text-shadow: 0 0 16px rgba(255,110,180,0.35); }
+    .mini-value.green { color: var(--accent);  text-shadow: 0 0 16px var(--glow); }
+
+    /* BEATS TIMELINE */
+    .beats-section { }
+
+    .beats-viz {
+      display: flex;
+      gap: 3px;
+      flex-wrap: wrap;
+      margin-top: 0.6rem;
+    }
+
+    .beat-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--border);
+      transition: background 0.3s;
+    }
+
+    .beat-dot.active {
+      background: var(--accent);
+      box-shadow: 0 0 6px var(--glow);
+      animation: pulse-dot 0.3s ease-out;
+    }
+
+    @keyframes pulse-dot {
+      0%   { transform: scale(1.8); }
+      100% { transform: scale(1); }
+    }
+
+    /* ERROR */
+    .error-box {
+      display: none;
+      background: rgba(255,80,80,0.08);
+      border: 1px solid rgba(255,80,80,0.25);
+      border-radius: 8px;
+      padding: 1rem;
+      font-size: 0.82rem;
+      color: #ff8080;
+      font-family: 'Space Mono', monospace;
+      line-height: 1.5;
+    }
+
+    /* SCROLLBAR */
+    .analysis-panel::-webkit-scrollbar { width: 4px; }
+    .analysis-panel::-webkit-scrollbar-track { background: transparent; }
+    .analysis-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+
+    /* ── LIVE CHORD ── */
+  .chord-section {
+    margin-top: 0.25rem;
+  }
+
+  .chord-display {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2rem 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+    margin-top: 0.6rem;
+  }
+
+  .chord-display::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, rgba(255,110,180,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .chord-name {
+    font-size: 4rem;
+    font-weight: 800;
+    color: var(--accent2);
+    letter-spacing: -0.04em;
+    line-height: 1;
+    text-shadow: 0 0 30px rgba(255,110,180,0.4);
+    transition: opacity 0.3s ease, transform 0.3s ease, filter 0.3s ease;
+  }
+
+  .chord-name.fade-out {
+    opacity: 0;
+    transform: scale(0.85) translateY(8px);
+    filter: blur(4px);
+  }
+
+  .chord-name.fade-in {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Beat<span>Scope</span></div>
+  <div class="search-bar">
+    <input type="text" id="url-input"
+      placeholder="Cole o link do YouTube aqui…"
+      autocomplete="off" spellcheck="false"/>
+    <button class="btn-analyze" id="btn-analyze">Analisar</button>
+  </div>
+</header>
+
+<main>
+  <!-- LEFT -->
+  <div class="video-panel">
+    <div class="video-placeholder" id="video-placeholder">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <polygon points="5 3 19 12 5 21 5 3"/>
+      </svg>
+      <p>Cole um link do YouTube<br/>e clique em <strong style="color:var(--text)">Analisar</strong></p>
+    </div>
+    <div id="yt-frame" style="width:100%;height:100%;display:none;"></div>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="analysis-panel">
+    <div class="panel-title">Análise Musical</div>
+
+    <div class="empty-state" id="empty-state">
+      <div class="icon">🎵</div>
+      <p>Os resultados da análise<br/>aparecerão aqui.</p>
+    </div>
+
+    <div class="loading-state" id="loading-state">
+      <div class="spinner"></div>
+      <p>Baixando e analisando áudio…<br/>pode levar alguns segundos.</p>
+    </div>
+
+    <div class="error-box" id="error-box"></div>
+
+    <div class="results" id="results">
+
+      <!-- BPM -->
+      <div class="metric-hero">
+        <div class="metric-label">Tempo</div>
+        <div class="metric-value" id="bpm-value">—<span class="metric-unit">BPM</span></div>
+      </div>
+
+      <!-- KEY -->
+      <div class="key-card">
+        <div class="metric-label">Tom / Escala</div>
+        <div class="key-name" id="key-value">—</div>
+        <div class="confidence-bar-wrap">
+          <div class="confidence-label">
+            <span>Confiança</span>
+            <span id="conf-pct">—</span>
+          </div>
+          <div class="confidence-bar">
+            <div class="confidence-fill" id="conf-fill" style="width:0%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MINI GRID -->
+      <div class="mini-grid">
+        <div class="mini-card">
+          <div class="mini-label">Dançabilidade</div>
+          <div class="mini-value pink" id="dance-value">—</div>
+        </div>
+        <div class="mini-card">
+          <div class="mini-label">Energia</div>
+          <div class="mini-value green" id="energy-value">—</div>
+        </div>
+      </div>
+
+      <!-- BEATS -->
+      <div class="beats-section">
+        <div class="panel-title">Pulsos detectados</div>
+        <div class="beats-viz" id="beats-viz"></div>
+      </div>
+
+      <div class="chord-section">
+        <div class="panel-title">Acorde Atual</div>
+        <div class="chord-display" id="chord-display">
+          <div class="chord-name" id="chord-name">—</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</main>
+
+<script>
+  const input      = document.getElementById('url-input');
+  const btnAnalyze = document.getElementById('btn-analyze');
+  const ytFrame    = document.getElementById('yt-frame');
+  const placeholder= document.getElementById('video-placeholder');
+  const emptyState = document.getElementById('empty-state');
+  const loadingState = document.getElementById('loading-state');
+  const errorBox   = document.getElementById('error-box');
+  const resultsDiv = document.getElementById('results');
+  const chordName  = document.getElementById('chord-name');
+
+  let ytPlayer = null;
+  let chordData = [];
+  let chordInterval = null;
+
+  // Load YouTube IFrame API
+  const tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(tag);
+
+  function onYouTubeIframeAPIReady() {
+    // API is ready; player is created when needed
+  }
+  // Expose globally for the API callback
+  window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;
+
+  function extractVideoId(url) {
+    const patterns = [
+      /(?:v=|\/)([\w-]{11})(?:[&?]|$)/,
+      /youtu\.be\/([\w-]{11})/,
+    ];
+    for (const p of patterns) {
+      const m = url.match(p);
+      if (m) return m[1];
+    }
+    return null;
+  }
+
+  function setState(state) {
+    emptyState.style.display   = state === 'empty'   ? 'flex' : 'none';
+    loadingState.style.display = state === 'loading' ? 'flex' : 'none';
+    errorBox.style.display     = state === 'error'   ? 'block': 'none';
+    resultsDiv.style.display   = state === 'results' ? 'flex' : 'none';
+  }
+
+  function showError(msg) {
+    setState('error');
+    errorBox.textContent = '\u26a0 ' + msg;
+  }
+
+  function loadVideo(videoId) {
+    placeholder.style.display = 'none';
+    ytFrame.style.display = 'block';
+
+    if (ytPlayer) {
+      ytPlayer.loadVideoById(videoId);
+    } else {
+      ytPlayer = new YT.Player('yt-frame', {
+        videoId: videoId,
+        playerVars: { autoplay: 1 },
+        events: {
+          onReady: () => {},
+        }
+      });
+    }
+  }
+
+  // ── CHORD SYNC ──
+  function startChordSync() {
+    stopChordSync();
+    if (!chordData.length) return;
+
+    let currentChord = null;
+
+    chordInterval = setInterval(() => {
+      if (!ytPlayer || typeof ytPlayer.getCurrentTime !== 'function') return;
+      const t = ytPlayer.getCurrentTime();
+
+      // Find the chord active at current time
+      let activeChord = chordData[0]?.chord || '—';
+      for (let i = chordData.length - 1; i >= 0; i--) {
+        if (t >= chordData[i].time) {
+          activeChord = chordData[i].chord;
+          break;
+        }
+      }
+
+      if (activeChord !== currentChord) {
+        currentChord = activeChord;
+        // Animate transition
+        chordName.classList.remove('fade-in');
+        chordName.classList.add('fade-out');
+        setTimeout(() => {
+          chordName.textContent = activeChord;
+          chordName.classList.remove('fade-out');
+          chordName.classList.add('fade-in');
+        }, 200);
+      }
+    }, 150); // poll every 150ms
+  }
+
+  function stopChordSync() {
+    if (chordInterval) {
+      clearInterval(chordInterval);
+      chordInterval = null;
+    }
+  }
+
+  function animateBeats(beats) {
+    const viz = document.getElementById('beats-viz');
+    viz.innerHTML = '';
+    const dots = beats.map(() => {
+      const d = document.createElement('div');
+      d.className = 'beat-dot';
+      viz.appendChild(d);
+      return d;
+    });
+
+    let i = 0;
+    function tick() {
+      if (i > 0) dots[i - 1]?.classList.remove('active');
+      if (i >= dots.length) { i = 0; }
+      dots[i]?.classList.add('active');
+      i++;
+      if (beats.length > 1 && i < beats.length) {
+        const interval = (beats[i] - beats[i - 1]) * 1000;
+        setTimeout(tick, Math.max(interval, 80));
+      } else {
+        setTimeout(tick, 500);
+      }
+    }
+    tick();
+  }
+
+  async function analyze() {
+    const url = input.value.trim();
+    if (!url) { input.focus(); return; }
+
+    const videoId = extractVideoId(url);
+    if (!videoId) { showError('URL inválida. Use um link válido do YouTube.'); return; }
+
+    loadVideo(videoId);
+    setState('loading');
+    btnAnalyze.disabled = true;
+    stopChordSync();
+
+    try {
+      const res = await fetch('/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        showError(data.error || 'Erro desconhecido no servidor.');
+        return;
+      }
+
+      document.getElementById('bpm-value').innerHTML =
+        `${data.bpm}<span class="metric-unit">BPM</span>`;
+      document.getElementById('key-value').textContent = data.key;
+      document.getElementById('conf-pct').textContent = `${data.key_confidence}%`;
+      document.getElementById('conf-fill').style.width = `${data.key_confidence}%`;
+      document.getElementById('dance-value').textContent = `${data.danceability}%`;
+      document.getElementById('energy-value').textContent = `${data.energy}%`;
+
+      if (data.beats && data.beats.length > 0) {
+        animateBeats(data.beats);
+      }
+
+      // Start chord sync
+      chordData = data.chords || [];
+      chordName.textContent = '—';
+      setState('results');
+      startChordSync();
+
+    } catch (e) {
+      showError('Não foi possível conectar ao servidor. Verifique se o Flask está rodando.');
+    } finally {
+      btnAnalyze.disabled = false;
+    }
+  }
+
+  btnAnalyze.addEventListener('click', analyze);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') analyze(); });
+</script>
+
+</body>
+</html>

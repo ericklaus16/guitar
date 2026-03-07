@@ -546,6 +546,33 @@
     transform: scale(1) translateY(0);
     filter: blur(0);
   }
+
+  .btn-tab {
+    display: none;
+    margin-top: 0.75rem;
+    background: transparent;
+    border: 1px solid var(--accent2);
+    color: var(--accent2);
+    font-family: 'Syne', sans-serif;
+    font-weight: 600;
+    font-size: 0.78rem;
+    padding: 0.65rem 1.2rem;
+    border-radius: 8px;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: background 0.2s, color 0.2s;
+    width: 100%;
+  }
+
+  .btn-tab:hover {
+    background: var(--accent2);
+    color: #0a0a0f;
+  }
+
+  .btn-tab:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
   </style>
 </head>
 <body>
@@ -646,6 +673,7 @@
         <div class="chord-display" id="chord-display">
           <div class="chord-name" id="chord-name">—</div>
         </div>
+        <button class="btn-tab" id="btn-tab">⬇ Gerar Tablatura (PDF)</button>
       </div>
 
     </div>
@@ -675,6 +703,8 @@
 
   let chordData = [];
   let _savedVolume = 1;
+  let _lastKey = '?';
+  let _lastBpm = 0;
   let chordInterval = null;
 
   function extractVideoId(url) {
@@ -885,6 +915,9 @@
       document.getElementById('conf-pct').textContent = `${data.key_confidence}%`;
       document.getElementById('conf-fill').style.width = `${data.key_confidence}%`;
 
+      _lastKey = data.key;
+      _lastBpm = data.bpm;
+
       if (data.beats && data.beats.length > 0) {
         animateBeats(data.beats);
       }
@@ -897,6 +930,7 @@
 
       chordData = data.chords || [];
       chordName.textContent = '—';
+      document.getElementById('btn-tab').style.display = chordData.length ? 'block' : 'none';
       setState('results');
       startChordSync();
 
@@ -909,6 +943,32 @@
 
   btnAnalyze.addEventListener('click', analyze);
   input.addEventListener('keydown', e => { if (e.key === 'Enter') analyze(); });
+
+  // ── TAB DOWNLOAD ──
+  document.getElementById('btn-tab').addEventListener('click', async () => {
+    if (!chordData.length) return;
+    const btn = document.getElementById('btn-tab');
+    btn.disabled = true;
+    btn.textContent = 'Gerando…';
+    try {
+      const res = await fetch('/generate_tab', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chords: chordData, key: _lastKey, bpm: _lastBpm })
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'tablature.pdf';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch(e) {} finally {
+      btn.disabled = false;
+      btn.textContent = '⬇ Gerar Tablatura (PDF)';
+    }
+  });
 </script>
 
 </body>

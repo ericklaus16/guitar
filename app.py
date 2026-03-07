@@ -1,11 +1,12 @@
 import os
 import re
+import io
 import shutil
 import tempfile
 import numpy as np
 import librosa
 import yt_dlp
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, request, jsonify, render_template, send_from_directory, send_file
 from flask_cors import CORS
 from hmmlearn import hmm
 
@@ -245,6 +246,351 @@ def _viterbi_decode(startprob, transmat, emission_probs):
 
     return path
 
+
+# ── Guitar voicing system for tablature ──
+
+# E-form barre shapes (offsets from root fret on 6th string)
+_E_BARRE = {
+    '':     [0, 2, 2, 1, 0, 0],
+    'm':    [0, 2, 2, 0, 0, 0],
+    '7':    [0, 2, 0, 1, 0, 0],
+    'm7':   [0, 2, 0, 0, 0, 0],
+    '7M':   [0, 2, 1, 1, 0, 0],
+    'dim':  [0, 1, 2, 0, -1, -1],
+    'aug':  [0, 3, 2, 1, 1, 0],
+    'sus2': [0, 2, 4, 4, 0, 0],
+    'sus4': [0, 2, 2, 2, 0, 0],
+}
+
+# A-form barre shapes (offsets from root fret on 5th string)
+_A_BARRE = {
+    '':     [-1, 0, 2, 2, 2, 0],
+    'm':    [-1, 0, 2, 2, 1, 0],
+    '7':    [-1, 0, 2, 0, 2, 0],
+    'm7':   [-1, 0, 2, 0, 1, 0],
+    '7M':   [-1, 0, 2, 1, 2, 0],
+    'dim':  [-1, 0, 1, 2, 1, -1],
+    'aug':  [-1, 0, 3, 2, 2, 1],
+    'sus2': [-1, 0, 2, 2, 0, 0],
+    'sus4': [-1, 0, 2, 2, 3, 0],
+}
+
+# Preferred open voicings (sound better than barre equivalents)
+_OPEN_VOICINGS = {
+    'C': [-1, 3, 2, 0, 1, 0], 'C7': [-1, 3, 2, 3, 1, 0],
+    'D': [-1, -1, 0, 2, 3, 2], 'Dm': [-1, -1, 0, 2, 3, 1],
+    'D7': [-1, -1, 0, 2, 1, 2], 'Dm7': [-1, -1, 0, 2, 1, 1],
+    'D7M': [-1, -1, 0, 2, 2, 2],
+    'Dsus2': [-1, -1, 0, 2, 3, 0], 'Dsus4': [-1, -1, 0, 2, 3, 3],
+    'E': [0, 2, 2, 1, 0, 0], 'Em': [0, 2, 2, 0, 0, 0],
+    'E7': [0, 2, 0, 1, 0, 0], 'Em7': [0, 2, 0, 0, 0, 0],
+    'E7M': [0, 2, 1, 1, 0, 0], 'Esus4': [0, 2, 2, 2, 0, 0],
+    'G': [3, 2, 0, 0, 0, 3], 'G7': [3, 2, 0, 0, 0, 1],
+    'A': [-1, 0, 2, 2, 2, 0], 'Am': [-1, 0, 2, 2, 1, 0],
+    'A7': [-1, 0, 2, 0, 2, 0], 'Am7': [-1, 0, 2, 0, 1, 0],
+    'A7M': [-1, 0, 2, 1, 2, 0],
+    'Asus2': [-1, 0, 2, 2, 0, 0], 'Asus4': [-1, 0, 2, 2, 3, 0],
+}
+
+_ROOT_FRET_6 = {n: (i - 4) % 12 for i, n in enumerate(NOTE_NAMES)}
+_ROOT_FRET_5 = {n: (i - 9) % 12 for i, n in enumerate(NOTE_NAMES)}
+
+
+def _get_voicing(chord_name: str) -> list[int]:
+    """Get guitar voicing [E,A,D,G,B,e] for a chord. -1 = muted."""
+    if chord_name in _OPEN_VOICINGS:
+        return _OPEN_VOICINGS[chord_name]
+    root = _extract_root(chord_name)
+    suffix = chord_name[len(root):]
+    fret_6 = _ROOT_FRET_6.get(root, 0)
+    fret_5 = _ROOT_FRET_5.get(root, 0)
+    if fret_5 < fret_6 and suffix in _A_BARRE:
+        shape = _A_BARRE[suffix]
+        base = fret_5
+    else:
+        shape = _E_BARRE.get(suffix, _E_BARRE[''])
+        base = fret_6
+    return [f + base if f >= 0 else -1 for f in shape]
+
+
+def generate_tablature(chords: list[dict], key: str = '?', bpm: float = 0) -> str:
+    """Generate text-based guitar tablature from chord data."""
+    if not chords:
+        return ''
+
+    lines: list[str] = []
+    lines.append('=' * 58)
+    lines.append('           BeatScope  \u2014  Guitar Tablature')
+    lines.append('=' * 58)
+    lines.append('')
+    lines.append(f'  Tom: {key}  |  BPM: {bpm}')
+    lines.append('  Afinacao padrao: E A D G B e')
+    lines.append('')
+
+    # Unique chords
+    unique: list[str] = []
+    seen: set[str] = set()
+    for c in chords:
+        name = c['chord']
+        if name not in seen:
+            unique.append(name)
+            seen.add(name)
+
+    lines.append(f'  Acordes: {" - ".join(unique)}')
+    lines.append('')
+    lines.append('--- Diagramas ' + '-' * 43)
+    lines.append('')
+
+    for i in range(0, len(unique), 2):
+        pair = unique[i:i + 2]
+        parts = []
+        for name in pair:
+            v = _get_voicing(name)
+            frets = ' '.join('x' if f == -1 else str(f) for f in v)
+            parts.append(f'  {name:8s} {frets}')
+        lines.append('    '.join(parts))
+    lines.append(f'  {"":8s} E A D G B e')
+    lines.append('')
+    lines.append('--- Tablatura ' + '-' * 43)
+    lines.append('')
+
+    PER_ROW = 4
+    COL = 17
+
+    for row_start in range(0, len(chords), PER_ROW):
+        row = chords[row_start:row_start + PER_ROW]
+        header = '    '
+        for c in row:
+            header += c['chord'].ljust(COL)
+        lines.append(header)
+
+        string_labels = ['e', 'B', 'G', 'D', 'A', 'E']
+        for si, sl in enumerate(string_labels):
+            line = f'{sl}|'
+            for c in row:
+                v = _get_voicing(c['chord'])
+                fret = v[5 - si]
+                if fret == -1:
+                    fs = '--x'
+                elif fret >= 10:
+                    fs = f'-{fret}'
+                else:
+                    fs = f'--{fret}'
+                line += fs + '-' * (COL - len(fs) - 1) + '|'
+            lines.append(line)
+
+        tline = '    '
+        for c in row:
+            t = c['time']
+            m = int(t) // 60
+            s = int(t) % 60
+            tline += f'{m}:{s:02d}'.ljust(COL)
+        lines.append(tline)
+        lines.append('')
+
+    return '\n'.join(lines)
+
+
+def _generate_tab_pdf(chords: list[dict], key: str, bpm) -> io.BytesIO:
+    """Generate a professional guitar tablature PDF using reportlab."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.colors import HexColor
+
+    buf = io.BytesIO()
+    W, H = A4
+    c = canvas.Canvas(buf, pagesize=A4)
+
+    # Colors
+    BG        = HexColor('#0a0a0f')
+    SURFACE   = HexColor('#15151f')
+    ACCENT    = HexColor('#7fff6e')
+    ACCENT2   = HexColor('#ff6eb4')
+    ACCENT3   = HexColor('#6eb4ff')
+    TEXT      = HexColor('#e8e8f0')
+    MUTED     = HexColor('#6a6a8a')
+    BORDER    = HexColor('#2a2a3e')
+
+    MONO = 'Courier'
+    SANS = 'Helvetica'
+
+    MARGIN_L = 30 * mm
+    MARGIN_R = 15 * mm
+    TAB_W = W - MARGIN_L - MARGIN_R
+
+    PER_ROW = 4
+    COL_W = TAB_W / PER_ROW
+
+    # Unique chords for the diagram section
+    unique: list[str] = []
+    seen: set[str] = set()
+    for ch in chords:
+        name = ch['chord']
+        if name not in seen:
+            unique.append(name)
+            seen.add(name)
+
+    def new_page():
+        c.setFillColor(BG)
+        c.rect(0, 0, W, H, fill=1, stroke=0)
+
+    def draw_header(y_pos):
+        # Title bar
+        c.setFillColor(SURFACE)
+        c.roundRect(MARGIN_L - 10 * mm, y_pos - 8 * mm, TAB_W + 20 * mm, 22 * mm, 3 * mm, fill=1, stroke=0)
+
+        c.setFont(SANS + '-Bold', 20)
+        c.setFillColor(ACCENT)
+        c.drawString(MARGIN_L, y_pos, 'BeatScope')
+        c.setFillColor(TEXT)
+        c.drawString(MARGIN_L + c.stringWidth('BeatScope', SANS + '-Bold', 20) + 4, y_pos, '— Guitar Tablature')
+
+        y_pos -= 14 * mm
+        c.setFont(MONO, 9)
+        c.setFillColor(MUTED)
+        c.drawString(MARGIN_L, y_pos, f'Tom: {key}   |   BPM: {bpm}   |   Afinação padrão: E A D G B e')
+
+        y_pos -= 6 * mm
+        c.setFillColor(MUTED)
+        c.drawString(MARGIN_L, y_pos, f'Acordes: {" - ".join(unique)}')
+
+        return y_pos - 8 * mm
+
+    def draw_chord_diagrams(y_pos):
+        c.setFont(SANS + '-Bold', 10)
+        c.setFillColor(ACCENT2)
+        c.drawString(MARGIN_L, y_pos, 'DIAGRAMAS DE ACORDES')
+        y_pos -= 5 * mm
+        c.setStrokeColor(BORDER)
+        c.setLineWidth(0.5)
+        c.line(MARGIN_L, y_pos, W - MARGIN_R, y_pos)
+        y_pos -= 8 * mm
+
+        cols = 4
+        box_w = TAB_W / cols
+        for idx, name in enumerate(unique):
+            col = idx % cols
+            if idx > 0 and col == 0:
+                y_pos -= 18 * mm
+                if y_pos < 30 * mm:
+                    c.showPage()
+                    new_page()
+                    y_pos = H - 25 * mm
+
+            x = MARGIN_L + col * box_w
+            v = _get_voicing(name)
+            frets = '  '.join('x' if f == -1 else str(f) for f in v)
+
+            c.setFont(SANS + '-Bold', 10)
+            c.setFillColor(ACCENT3)
+            c.drawString(x, y_pos, name)
+
+            c.setFont(MONO, 8.5)
+            c.setFillColor(TEXT)
+            c.drawString(x, y_pos - 5 * mm, frets)
+
+            c.setFont(MONO, 6.5)
+            c.setFillColor(MUTED)
+            c.drawString(x, y_pos - 9 * mm, 'E  A  D  G  B  e')
+
+        y_pos -= 20 * mm
+        return y_pos
+
+    def draw_tab_section(y_pos, row_chords):
+        """Draw one row of tablature (up to PER_ROW chords)."""
+        needed = 24 * mm
+        if y_pos - needed < 20 * mm:
+            c.showPage()
+            new_page()
+            y_pos = H - 25 * mm
+
+        # Chord names header
+        c.setFont(SANS + '-Bold', 9)
+        for i, ch in enumerate(row_chords):
+            x = MARGIN_L + i * COL_W
+            c.setFillColor(ACCENT2)
+            c.drawString(x + 4, y_pos, ch['chord'])
+
+        y_pos -= 5 * mm
+
+        # Tab lines
+        string_labels = ['e', 'B', 'G', 'D', 'A', 'E']
+        line_spacing = 2.6 * mm
+
+        for si, sl in enumerate(string_labels):
+            line_y = y_pos - si * line_spacing
+
+            # String label
+            c.setFont(MONO, 7)
+            c.setFillColor(MUTED)
+            c.drawString(MARGIN_L - 7 * mm, line_y - 1, sl)
+
+            # Staff line
+            c.setStrokeColor(BORDER)
+            c.setLineWidth(0.4)
+            c.line(MARGIN_L, line_y, MARGIN_L + len(row_chords) * COL_W, line_y)
+
+            # Fret numbers
+            c.setFont(MONO, 8)
+            c.setFillColor(TEXT)
+            for i, ch in enumerate(row_chords):
+                v = _get_voicing(ch['chord'])
+                fret = v[5 - si]
+                txt = 'x' if fret == -1 else str(fret)
+                x = MARGIN_L + i * COL_W + COL_W * 0.35
+                # Background circle for readability
+                tw = c.stringWidth(txt, MONO, 8)
+                c.setFillColor(BG)
+                c.rect(x - 1, line_y - 2, tw + 2, 5, fill=1, stroke=0)
+                c.setFillColor(ACCENT if fret >= 0 else MUTED)
+                c.drawString(x, line_y - 1.5, txt)
+
+        y_pos -= len(string_labels) * line_spacing + 2 * mm
+
+        # Timestamps
+        c.setFont(MONO, 6.5)
+        c.setFillColor(MUTED)
+        for i, ch in enumerate(row_chords):
+            t = ch['time']
+            m = int(t) // 60
+            s = int(t) % 60
+            x = MARGIN_L + i * COL_W + 4
+            c.drawString(x, y_pos, f'{m}:{s:02d}')
+
+        y_pos -= 7 * mm
+        return y_pos
+
+    # === Build the PDF ===
+    new_page()
+    y = H - 25 * mm
+    y = draw_header(y)
+    y = draw_chord_diagrams(y)
+
+    # Separator
+    c.setFont(SANS + '-Bold', 10)
+    c.setFillColor(ACCENT)
+    c.drawString(MARGIN_L, y, 'TABLATURA')
+    y -= 5 * mm
+    c.setStrokeColor(BORDER)
+    c.setLineWidth(0.5)
+    c.line(MARGIN_L, y, W - MARGIN_R, y)
+    y -= 8 * mm
+
+    for row_start in range(0, len(chords), PER_ROW):
+        row = chords[row_start:row_start + PER_ROW]
+        y = draw_tab_section(y, row)
+
+    # Footer on last page
+    c.setFont(MONO, 7)
+    c.setFillColor(MUTED)
+    c.drawString(MARGIN_L, 10 * mm, 'Gerado por BeatScope')
+
+    c.save()
+    buf.seek(0)
+    return buf
+
+
 def extract_video_id(url: str) -> str | None:
     patterns = [
         r'[?&]v=([0-9A-Za-z_-]{11})',
@@ -329,7 +675,7 @@ def detect_bpm(y, sr) -> tuple[float, list[float]]:
 
 def analyze_audio(audio_path: str) -> dict:
     """Run full audio analysis on a file."""
-    y, sr = librosa.load(audio_path, sr=22050, mono=True, duration=120)
+    y, sr = librosa.load(audio_path, sr=22050, mono=True)
 
     bpm, beats = detect_bpm(y, sr)
     key, confidence = detect_key(y, sr)
@@ -352,6 +698,21 @@ def index():
 @app.route("/audio/<path:filename>")
 def serve_audio(filename):
     return send_from_directory(AUDIO_DIR, filename)
+
+
+@app.route("/generate_tab", methods=["POST"])
+def gen_tab():
+    data = request.get_json()
+    chords = data.get("chords", [])
+    key = data.get("key", "?")
+    bpm = data.get("bpm", "?")
+
+    if not chords:
+        return jsonify({"error": "Nenhum acorde detectado."}), 400
+
+    buf = _generate_tab_pdf(chords, key, bpm)
+    return send_file(buf, mimetype='application/pdf',
+                     as_attachment=True, download_name='tablature.pdf')
 
 
 @app.route("/analyze", methods=["POST"])
